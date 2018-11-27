@@ -1,6 +1,7 @@
 import java.io.{ByteArrayInputStream, InputStream, OutputStream, OutputStreamWriter}
 import java.util.Collections
 
+import Handler.WireBody.{WireMessage, WireSpace, WireUser}
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
 import com.amazonaws.auth._
 import com.amazonaws.services.dynamodbv2.model.AttributeValue
@@ -11,7 +12,7 @@ import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.json.jackson2.JacksonFactory
 import com.google.api.services.chat.v1._
 import com.google.api.services.chat.v1.model._
-import play.api.libs.json.{JsValue, Json}
+import play.api.libs.json.{JsValue, Json, Writes}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -45,13 +46,62 @@ object Handler {
       .build()
   }
 
+  case class WireRequest(body: String)
+  object WireRequest {
+    implicit val reads = Json.reads[WireRequest]
+  }
+
+  case class WireBody(
+    `type`: String,
+    token: String,
+    message: WireMessage,
+    user: WireUser,
+    space: WireSpace
+  )
+  object WireBody {
+    case class WireMessage(
+      name: String, //  spaces/zBKQ9AAAAAE/messages/fD0Vh9OUndQ.fD0Vh9OUndQ
+      text: String, // this is what they typed
+      thread: WireThread
+    )
+    case class WireThread(
+      name: String // "spaces/zBKQ9AAAAAE/threads/fD0Vh9OUndQ"
+    )
+    case class WireUser(
+      name: String, // "users/376324763467834786234"
+      displayName: String, // "john duffell"
+      email: String // the email address
+    )
+    case class WireSpace(
+      name: String, // spaces/zBKQ9AAAAAE
+    )
+
+    implicit val readsWireThread = Json.reads[WireThread]
+    implicit val readsWireMessage = Json.reads[WireMessage]
+    implicit val readsWireUser = Json.reads[WireUser]
+    implicit val readsWireSpace = Json.reads[WireSpace]
+    implicit val reads = Json.reads[WireBody]
+  }
+
+  case class WireResponse(statusCode: String, headers: Map[String, String], body: String)
+  object WireResponse {
+
+    implicit val responseWrites = Json.writes[WireResponse]
+
+  }
+
   def doIt(input: JsValue): Option[JsValue] = {
 
+    val wireInput = input.validate[WireRequest]
+
     println(input)
+    val wireBody = Json.parse(wireInput.get.body).validate[WireBody].get
+    println(s"body as case class = $wireBody")
 
     val spaces = hangoutsClient(jsonAuth).spaces().list()
     println(s"spaces: $spaces")
-    Some(input)
+    val wireOutput = WireResponse("200", Map("Content-Type" -> "text/plain"), "hello world")
+    Some(Json.toJson[WireResponse](wireOutput))
   }
 
   def getUserData(user: String) = {
