@@ -135,6 +135,11 @@ object Handler {
     println(s"bot message: $spaceId, message: $message")
   }
 
+  lazy val areas = List(
+    "Innovation", "Cross team collaboration", "Leadership"
+  )
+  lazy val areasString = areas.zipWithIndex.map({case (area, int) => s"*${int+1}*: $area"}).mkString("\n")
+
   // this decides what to do
   def dealWithMessage(wireBody: WireBody): ChatResponse = {
     val email = wireBody.user.email
@@ -142,34 +147,57 @@ object Handler {
 
     val currentState = getUserData(email).updated("spaceId", wireBody.space.name/* TODO tbc */)
     if (message == "debug") ChatResponse(currentState.toString)
-    val (updatedData, response) = currentState.get("state") match {
-      case Some("choseUser") =>
-        (currentState, "We are still waiting for your feedback.")
-      case Some("asked") =>
-        val askerEmail = currentState("asker")
-        val originatorUserData = getUserData(askerEmail)
-        val originatorSpaceId = originatorUserData("spaceId")
-        botInitiate(originatorSpaceId, s"Your feedback from $email is: $message")
-        setUserData(originatorUserData.-("state"))
-        (currentState.-("state"), s"Thanks! we have sent your comments to $askerEmail")
-      case None if message.contains("@") => // we aren't expecting anything special back
-        val theirUserData = getUserData(message)
-        theirUserData.get("spaceId") match {
-          case Some(theirSpaceId) =>
-            val updated = currentState.updated ("state", "choseUser").updated("theirSpaceId", theirSpaceId)
-            botInitiate(theirSpaceId, s"hello, $email wants to get feedback - please type in now.")
-            setUserData(theirUserData.updated("state", "asked").updated("asker", email))
-            (updated, s"We have asked $message for feedback!\nPlease hold tight while they respond in their own time.")
-          case None =>
-            (currentState, s"sorry, we don't have $message on our system yet, please get them to message the bot first")
-        }
-      case None =>
-        (currentState, "*Welcome to feedback bot!*\uD83E\uDD16\nWho have you been working with recently?")
+    else {
+      val (updatedData, response) = currentState.get("state") match {
+        case Some("waiting") =>
+          (currentState, "We are still waiting for your feedback.")
+        case Some("asked") =>
+          val askerEmail = currentState("asker")
+          val originatorUserData = getUserData(askerEmail)
+          val originatorSpaceId = originatorUserData("spaceId")
+          botInitiate(originatorSpaceId, s"$email said:\n*$message*")
+          setUserData(originatorUserData.-("state"))
+          (currentState.-("state"), s"Thanks!")
+        case Some("choseUser") =>
+          Try(Integer.parseInt(message)).map(_ - 1).map(areas).map { area =>
+            val theirEmail = currentState("theirEmail")
+            val updated = currentState
+              .updated("area", area)
+              .updated("state", "choseObjective")
+            (updated, s"Thanks!\n*What piece of work did you want feedback on?*")
+          }.getOrElse((currentState, s"Please enter an integer!\n$areasString"))
+        case Some("choseObjective") =>
+          // enter work
+          val theirEmail = currentState("theirEmail")
+          val theirUserData = getUserData(theirEmail)
+          val theirSpaceId = theirUserData("spaceId")
+          val area = currentState("area")
+          val work = message
+          val updated = currentState
+            .updated("state", "waiting")
+          botInitiate(theirSpaceId, s".\n\n\n\nWelcome, $email wants feedback on\n*$work*\non the task\n*$area*")
+          setUserData(theirUserData.updated("state", "asked").updated("asker", email))
+          (updated, s"Thanks, please be patient\n\n ")
+        case None if message.contains("@") => // we aren't expecting anything special back
+          val theirUserData = getUserData(message)
+          theirUserData.get("spaceId") match {
+            case Some(theirSpaceId) =>
+              val updated = currentState
+                .updated("state", "choseUser")
+                .updated("theirSpaceId", theirSpaceId)
+                .updated("theirEmail", message)
+              (updated, s"Thanks, choose an area for feedback:\n$areasString")
+            case None =>
+              (currentState, s"sorry, we don't have $message on our system yet, please get them to message the bot first")
+          }
+        case None =>
+          (currentState, "*Welcome to feedback bot!*\uD83E\uDD16\nWho have you been working with recently?")
 
+      }
+
+      setUserData(updatedData)
+      ChatResponse(s"$response")
     }
-
-    setUserData(updatedData)
-    ChatResponse(s"$response")
   }
 
   def getUserData(user: String) = {
