@@ -34,18 +34,40 @@ object Handler {
 
   lazy val jsonAuth = config("google")
 
-  private def hangoutsClient(jsonAuth: String) = {
+  private def hangoutsClient(jsonAuth: String): HangoutsChat = {
     val httpTransport = GoogleNetHttpTransport.newTrustedTransport()
     val jsonFactory = JacksonFactory.getDefaultInstance()
+    val scope = List("https://www.googleapis.com/auth/chat.bot")
     val credential = GoogleCredential
       .fromStream(new ByteArrayInputStream(jsonAuth.getBytes("UTF-8")))
-      //.createScoped(Collections.singleton(DriveScopes.DRIVE_READONLY))
+      .createScoped(scope.asJavaCollection)
+
+    //.createScoped(Collections.singleton(DriveScopes.DRIVE_READONLY))
 
     new HangoutsChat.Builder(httpTransport, jsonFactory, credential)
       .setApplicationName("feedback chat bot")
       .build()
   }
 
+  def botInitiatedMessage() = {
+    val message = new Message
+    val spaceNameLA = "spaces/zBKQ9AAAAAE"
+    val spaceName = "spaces/qoMM9AAAAAE"
+    val space = new Space
+    space.setName(spaceName)
+
+    message.setText("hello john!")
+    message.setSpace(space)
+
+    Try(hangoutsClient(jsonAuth).spaces().messages().create(spaceName, message).execute()) match {
+      case Success(msg) => println(msg)
+      case Failure(e) => {
+        println(e.printStackTrace())
+      }
+    }
+
+    //https://chat.googleapis.com/v1/spaces/SPACE_ID/messages
+  }
   case class WireRequest(body: String)
   object WireRequest {
     implicit val reads = Json.reads[WireRequest]
@@ -73,7 +95,7 @@ object Handler {
       email: String // the email address
     )
     case class WireSpace(
-      name: String, // spaces/zBKQ9AAAAAE
+      name: String // spaces/zBKQ9AAAAAE
     )
 
     implicit val readsWireThread = Json.reads[WireThread]
@@ -115,14 +137,15 @@ object Handler {
   }
 
   def main(args: Array[String]): Unit = {
+    botInitiatedMessage()
 
 //    val configData = Source.fromFile("/etc/gu/chatbot.json", "UTF-8").getLines().mkString("\n")
 //    AwsS3.putItem(Map("id" -> "config", "google" -> configData))
 
-    val spaces = hangoutsClient(jsonAuth).spaces().list()
-    println(s"spaces: $spaces")
-    val item = getUserData("ididid")
-    println(s"item: $item")
+//    val spaces = hangoutsClient(jsonAuth).spaces().list()
+//    println(s"spaces: $spaces")
+//    val item = getUserData("ididid")
+//    println(s"item: $item")
   }
 
   // this is the entry point
