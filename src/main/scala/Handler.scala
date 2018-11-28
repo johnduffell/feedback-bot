@@ -49,25 +49,6 @@ object Handler {
       .build()
   }
 
-  def botInitiatedMessage() = {
-    val message = new Message
-    val spaceNameLA = "spaces/zBKQ9AAAAAE"
-    val spaceName = "spaces/qoMM9AAAAAE"
-    val space = new Space
-    space.setName(spaceName)
-
-    message.setText("hello john!")
-    message.setSpace(space)
-
-    Try(hangoutsClient(jsonAuth).spaces().messages().create(spaceName, message).execute()) match {
-      case Success(msg) => println(msg)
-      case Failure(e) => {
-        println(e.printStackTrace())
-      }
-    }
-
-    //https://chat.googleapis.com/v1/spaces/SPACE_ID/messages
-  }
   case class WireRequest(body: String)
   object WireRequest {
     implicit val reads = Json.reads[WireRequest]
@@ -134,7 +115,23 @@ object Handler {
     Some(Json.toJson[WireResponse](wireOutput))
   }
 
-  def botInitiate(spaceId: String, message: String) = {
+  def botInitiate(spaceId: String, messageText: String) = {
+
+    val message = new Message
+    val space = new Space
+    space.setName(spaceId)
+
+    message.setText(messageText)
+    message.setSpace(space)
+
+    Try(hangoutsClient(jsonAuth).spaces().messages().create(spaceId, message).execute()) match {
+      case Success(msg) => println(msg)
+      case Failure(e) => {
+        println(e.printStackTrace())
+      }
+    }
+
+    //https://chat.googleapis.com/v1/spaces/SPACE_ID/messages
     println(s"bot message: $spaceId, message: $message")
   }
 
@@ -186,7 +183,6 @@ object Handler {
   }
 
   def main(args: Array[String]): Unit = {
-    botInitiatedMessage()
 
 //    val configData = Source.fromFile("/etc/gu/chatbot.json", "UTF-8").getLines().mkString("\n")
 //    AwsS3.putItem(Map("id" -> "config", "google" -> configData))
