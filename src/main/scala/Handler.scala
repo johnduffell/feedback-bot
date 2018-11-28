@@ -112,6 +112,11 @@ object Handler {
 
   }
 
+  case class ChatResponse(text: String)
+  object ChatResponse {
+    implicit val writes = Json.writes[ChatResponse]
+  }
+
   def doIt(input: JsValue): Option[JsValue] = {
 
     val wireInput = input.validate[WireRequest]
@@ -122,8 +127,52 @@ object Handler {
 
     val spaces = hangoutsClient(jsonAuth).spaces().list()
     println(s"spaces: $spaces")
-    val wireOutput = WireResponse("200", Map("Content-Type" -> "text/plain"), "hello world")
+
+    val chatResponse = dealWithMessage(wireBody)
+    val jsVal = Json.toJson(chatResponse)
+    val wireOutput = WireResponse("200", Map("Content-Type" -> "text/json"), Json.stringify(jsVal))
     Some(Json.toJson[WireResponse](wireOutput))
+  }
+
+  def botInitiate(spaceId: String, message: String) = {
+    println(s"bot message: $spaceId, message: $message")
+  }
+
+  // this decides what to do
+  def dealWithMessage(wireBody: WireBody): ChatResponse = {
+    val email = wireBody.user.email
+    val message = wireBody.message.text
+
+    val currentState = getUserData(email).updated("spaceId", wireBody.space.name/* TODO tbc */)
+    if (message == "debug") ChatResponse(currentState.toString)
+    val (updatedData, response) = currentState.get("state") match {
+      case Some("choseUser") =>
+        (currentState, "We are still waiting for your feedback.")
+      case Some("asked") =>
+        val askerEmail = currentState("asker")
+        val originatorUserData = getUserData(askerEmail)
+        val originatorSpaceId = originatorUserData("spaceId")
+        botInitiate(originatorSpaceId, s"Your feedback from $email is: $message")
+        setUserData(originatorUserData.-("state"))
+        (currentState.-("state"), s"Thanks! we have sent your comments to $askerEmail")
+      case None if message.contains("@") => // we aren't expecting anything special back
+        val theirUserData = getUserData(message)
+        theirUserData.get("spaceId") match {
+          case Some(theirSpaceId) =>
+            val updated = currentState.updated ("state", "choseUser").updated("theirSpaceId", theirSpaceId)
+            botInitiate(theirSpaceId, s"hello, $email wants to get feedback - please type in now.")
+            setUserData(theirUserData.updated("state", "asked").updated("asker", email))
+            (updated, s"We have asked $message for feedback!\nPlease hold tight while they respond in their own time.")
+          case None =>
+            (currentState, s"sorry, we don't have $message on our system yet, please get them to message the bot first")
+        }
+      case None =>
+        (currentState, "*Welcome to feedback bot!*\uD83E\uDD16\nWho have you been working with recently?")
+
+    }
+
+    setUserData(updatedData)
+    ChatResponse(s"$response")
   }
 
   def getUserData(user: String) = {
